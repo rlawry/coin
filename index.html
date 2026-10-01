@@ -13,6 +13,8 @@
     --bg-edge: #121625;
     --purple: #b98bff;
     --yellow: #ffd23f;
+    --green: #5fe08a;
+    --cyan: #6fd3ff;
     --gold-light: #f5d98a;
     --gold: #d9a93a;
     --gold-dark: #9c7320;
@@ -33,11 +35,10 @@
     position: relative;
   }
 
-  /* Result word, above the coin */
   #result {
     position: absolute;
     left: 50%;
-    top: 22%;
+    top: 20%;
     transform: translate(-50%, -50%) scale(0.8);
     margin: 0;
     font-weight: 700;
@@ -49,18 +50,15 @@
     white-space: nowrap;
   }
   #result.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  #result.heads { color: var(--purple); }
-  #result.tails { color: var(--yellow); }
 
-  /* Coin, centered */
   .stage {
     position: absolute;
     left: 50%;
     top: 47%;
+    --size: clamp(130px, 28vmin, 230px);
     width: var(--size);
     height: var(--size);
     transform: translate(-50%, -50%);
-    --size: clamp(140px, 30vmin, 240px);
     perspective: 900px;
   }
   .shadow {
@@ -83,17 +81,17 @@
   .face {
     position: absolute;
     inset: 0;
-    border-radius: 50%;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
     display: grid;
     place-items: center;
-    background:
-      radial-gradient(circle at 35% 30%, var(--gold-light) 0%, var(--gold) 55%, var(--gold-dark) 100%);
+    background: radial-gradient(circle at 35% 30%, var(--gold-light) 0%, var(--gold) 55%, var(--gold-dark) 100%);
     box-shadow:
       inset 0 0 0 calc(var(--size) * 0.045) var(--gold-dark),
       inset 0 0 0 calc(var(--size) * 0.07) var(--gold-light);
   }
+  .coin.round .face { border-radius: 50%; }
+  .coin.prism .face { border-radius: 14%; }
   .face span {
     font-weight: 700;
     font-size: calc(var(--size) * 0.5);
@@ -101,13 +99,11 @@
     color: var(--ink);
     text-shadow: 0 2px 0 var(--gold-light);
   }
-  .face.tails { transform: rotateX(180deg); }
 
-  /* Button in the lower part of the screen */
   #flip {
     position: absolute;
     left: 50%;
-    top: 75%;
+    top: 74%;
     transform: translate(-50%, -50%);
     font-family: inherit;
     font-weight: 700;
@@ -125,8 +121,51 @@
     transform: translate(-50%, calc(-50% + 4px));
     box-shadow: 0 2px 0 #9aa3bd;
   }
-  #flip:focus-visible { outline: 4px solid var(--yellow); outline-offset: 4px; }
-  #flip:disabled { opacity: 0.6; cursor: default; }
+
+  .sides {
+    position: absolute;
+    left: 50%;
+    top: 88%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.35rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 0;
+    margin: 0;
+  }
+  .sides legend {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .sides label {
+    position: relative;
+    cursor: pointer;
+  }
+  .sides input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .sides span {
+    display: block;
+    padding: 0.5em 1.1em;
+    border-radius: 999px;
+    color: #d6dbe8;
+    font-weight: 700;
+    font-size: clamp(0.95rem, 2.8vw, 1.15rem);
+    white-space: nowrap;
+  }
+  .sides input:checked + span { background: #ffffff; color: var(--button-ink); }
+  .sides input:disabled + span { opacity: 0.6; }
+
+  #flip:focus-visible,
+  .sides input:focus-visible + span { outline: 4px solid var(--yellow); outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -135,49 +174,99 @@
   <div class="stage" aria-hidden="true">
     <div class="shadow" id="shadow"></div>
     <div class="jumper" id="jumper">
-      <div class="coin" id="coin">
-        <div class="face heads"><span>H</span></div>
-        <div class="face tails"><span>T</span></div>
-      </div>
+      <div class="coin round" id="coin"></div>
     </div>
   </div>
 
   <button id="flip" type="button">Flip Coin</button>
 
+  <fieldset class="sides" id="sides">
+    <legend>Number of sides</legend>
+    <label><input type="radio" name="sides" value="2" checked><span>2 sides</span></label>
+    <label><input type="radio" name="sides" value="3"><span>3 sides</span></label>
+    <label><input type="radio" name="sides" value="4"><span>4 sides</span></label>
+  </fieldset>
+
 <script>
+  // Every side: the word shown above the coin, its color, and the mark on the coin face.
+  const SIDES = [
+    { word: 'HEADS', color: 'var(--purple)', mark: 'H' },
+    { word: 'TAILS', color: 'var(--yellow)', mark: 'T' },
+    { word: 'STARS', color: 'var(--green)',  mark: '★' },
+    { word: 'MOONS', color: 'var(--cyan)',   mark: '☾' }
+  ];
+
   const coin = document.getElementById('coin');
   const jumper = document.getElementById('jumper');
   const shadow = document.getElementById('shadow');
   const result = document.getElementById('result');
   const button = document.getElementById('flip');
+  const radios = document.querySelectorAll('input[name="sides"]');
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let rotation = 0; // running total so each flip continues from the last
+  let sideCount = 2;
+  let rotation = 0;
+  let currentAnim = null;
 
-  function randomSide() {
-    const arr = new Uint32Array(1);
-    crypto.getRandomValues(arr);
-    return arr[0] % 2 === 0 ? 'heads' : 'tails';
+  function buildCoin(n) {
+    sideCount = n;
+    coin.innerHTML = '';
+    coin.className = 'coin ' + (n === 2 ? 'round' : 'prism');
+    if (currentAnim) currentAnim.cancel();
+    rotation = 0;
+    coin.style.transform = 'rotateX(0deg)';
+    result.classList.remove('show');
+
+    const size = coin.getBoundingClientRect().height || 200;
+    const step = 360 / n;
+    // Distance from the center of the coin out to each face.
+    // A flat coin is thin; a 3- or 4-sided coin is a prism that rolls.
+    const depth = n === 2 ? 3 : size / (2 * Math.tan(Math.PI / n));
+
+    for (let i = 0; i < n; i++) {
+      const face = document.createElement('div');
+      face.className = 'face';
+      face.style.transform = `rotateX(${i * step}deg) translateZ(${depth}px)`;
+      const mark = document.createElement('span');
+      mark.textContent = SIDES[i].mark;
+      face.appendChild(mark);
+      coin.appendChild(face);
+    }
   }
+
+  function randomIndex(n) {
+    // Unbiased random integer from 0 to n-1
+    const arr = new Uint32Array(1);
+    const limit = Math.floor(0x100000000 / n) * n;
+    do { crypto.getRandomValues(arr); } while (arr[0] >= limit);
+    return arr[0] % n;
+  }
+
+  radios.forEach(r => r.addEventListener('change', () => buildCoin(Number(r.value))));
+  window.addEventListener('resize', () => buildCoin(sideCount));
 
   button.addEventListener('click', () => {
     button.disabled = true;
-    result.classList.remove('show', 'heads', 'tails');
+    radios.forEach(r => r.disabled = true);
+    result.classList.remove('show');
 
-    const side = randomSide();
+    const n = sideCount;
+    const pick = randomIndex(n);
+    const side = SIDES[pick];
+    const step = 360 / n;
     const duration = reduceMotion ? 400 : 1600;
     const spins = reduceMotion ? 1 : 5 + Math.floor(Math.random() * 3);
 
-    // Land on a multiple of 360 for heads, +180 for tails
+    // Spin forward several full turns, then stop with the chosen face toward the viewer.
     const base = Math.ceil(rotation / 360) * 360 + spins * 360;
-    const target = side === 'heads' ? base : base + 180;
+    const target = base + pick * step;
 
-    coin.animate(
-      [{ transform: `rotateX(${rotation}deg)` }, { transform: `rotateX(${target}deg)` }],
+    currentAnim = coin.animate(
+      [{ transform: `rotateX(${-rotation}deg)` }, { transform: `rotateX(${-target}deg)` }],
       { duration, easing: 'cubic-bezier(.25,.6,.35,1)', fill: 'forwards' }
     );
 
-    const height = reduceMotion ? 0 : 'min(-34vh, -160px)';
+    const height = reduceMotion ? '0px' : 'min(-34vh, -160px)';
     jumper.animate(
       [
         { transform: 'translateY(0)', easing: 'cubic-bezier(.2,.7,.4,1)' },
@@ -202,12 +291,16 @@
     rotation = target;
 
     setTimeout(() => {
-      result.textContent = side === 'heads' ? 'HEADS' : 'TAILS';
-      result.classList.add(side, 'show');
+      result.textContent = side.word;
+      result.style.color = side.color;
+      result.classList.add('show');
       button.disabled = false;
+      radios.forEach(r => r.disabled = false);
       button.focus();
     }, duration);
   });
+
+  buildCoin(2);
 </script>
 </body>
 </html>
