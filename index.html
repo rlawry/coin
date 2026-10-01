@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Coin Toss</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1c2233;
+    --bg-edge: #121625;
+    --purple: #b98bff;
+    --yellow: #ffd23f;
+    --gold-light: #f5d98a;
+    --gold: #d9a93a;
+    --gold-dark: #9c7320;
+    --ink: #3d2a05;
+    --button: #ffffff;
+    --button-ink: #1c2233;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(circle at 50% 50%, var(--bg) 40%, var(--bg-edge) 100%);
+    background-color: var(--bg);
+    font-family: "Atkinson Hyperlegible", "Verdana", "Segoe UI", sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Result word, above the coin */
+  #result {
+    position: absolute;
+    left: 50%;
+    top: 22%;
+    transform: translate(-50%, -50%) scale(0.8);
+    margin: 0;
+    font-weight: 700;
+    font-size: clamp(3rem, 12vw, 7rem);
+    letter-spacing: 0.04em;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.35s cubic-bezier(.3,1.6,.5,1);
+    white-space: nowrap;
+  }
+  #result.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #result.heads { color: var(--purple); }
+  #result.tails { color: var(--yellow); }
+
+  /* Coin, centered */
+  .stage {
+    position: absolute;
+    left: 50%;
+    top: 47%;
+    width: var(--size);
+    height: var(--size);
+    transform: translate(-50%, -50%);
+    --size: clamp(140px, 30vmin, 240px);
+    perspective: 900px;
+  }
+  .shadow {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    bottom: -18%;
+    height: 12%;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    filter: blur(6px);
+  }
+  .jumper { width: 100%; height: 100%; }
+  .coin {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+  }
+  .face {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(circle at 35% 30%, var(--gold-light) 0%, var(--gold) 55%, var(--gold-dark) 100%);
+    box-shadow:
+      inset 0 0 0 calc(var(--size) * 0.045) var(--gold-dark),
+      inset 0 0 0 calc(var(--size) * 0.07) var(--gold-light);
+  }
+  .face span {
+    font-weight: 700;
+    font-size: calc(var(--size) * 0.5);
+    line-height: 1;
+    color: var(--ink);
+    text-shadow: 0 2px 0 var(--gold-light);
+  }
+  .face.tails { transform: rotateX(180deg); }
+
+  /* Button in the lower part of the screen */
+  #flip {
+    position: absolute;
+    left: 50%;
+    top: 75%;
+    transform: translate(-50%, -50%);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
+    padding: 0.7em 1.8em;
+    border: none;
+    border-radius: 999px;
+    background: var(--button);
+    color: var(--button-ink);
+    cursor: pointer;
+    box-shadow: 0 6px 0 #9aa3bd;
+    transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.2s;
+  }
+  #flip:active:not(:disabled) {
+    transform: translate(-50%, calc(-50% + 4px));
+    box-shadow: 0 2px 0 #9aa3bd;
+  }
+  #flip:focus-visible { outline: 4px solid var(--yellow); outline-offset: 4px; }
+  #flip:disabled { opacity: 0.6; cursor: default; }
+</style>
+</head>
+<body>
+  <h1 id="result" aria-live="polite"></h1>
+
+  <div class="stage" aria-hidden="true">
+    <div class="shadow" id="shadow"></div>
+    <div class="jumper" id="jumper">
+      <div class="coin" id="coin">
+        <div class="face heads"><span>H</span></div>
+        <div class="face tails"><span>T</span></div>
+      </div>
+    </div>
+  </div>
+
+  <button id="flip" type="button">Flip Coin</button>
+
+<script>
+  const coin = document.getElementById('coin');
+  const jumper = document.getElementById('jumper');
+  const shadow = document.getElementById('shadow');
+  const result = document.getElementById('result');
+  const button = document.getElementById('flip');
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let rotation = 0; // running total so each flip continues from the last
+
+  function randomSide() {
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    return arr[0] % 2 === 0 ? 'heads' : 'tails';
+  }
+
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    result.classList.remove('show', 'heads', 'tails');
+
+    const side = randomSide();
+    const duration = reduceMotion ? 400 : 1600;
+    const spins = reduceMotion ? 1 : 5 + Math.floor(Math.random() * 3);
+
+    // Land on a multiple of 360 for heads, +180 for tails
+    const base = Math.ceil(rotation / 360) * 360 + spins * 360;
+    const target = side === 'heads' ? base : base + 180;
+
+    coin.animate(
+      [{ transform: `rotateX(${rotation}deg)` }, { transform: `rotateX(${target}deg)` }],
+      { duration, easing: 'cubic-bezier(.25,.6,.35,1)', fill: 'forwards' }
+    );
+
+    const height = reduceMotion ? 0 : 'min(-34vh, -160px)';
+    jumper.animate(
+      [
+        { transform: 'translateY(0)', easing: 'cubic-bezier(.2,.7,.4,1)' },
+        { transform: `translateY(${height})`, offset: 0.45, easing: 'cubic-bezier(.6,0,.8,.3)' },
+        { transform: 'translateY(0)', offset: 0.88 },
+        { transform: 'translateY(-10px)', offset: 0.94 },
+        { transform: 'translateY(0)' }
+      ],
+      { duration }
+    );
+
+    shadow.animate(
+      [
+        { transform: 'scale(1)', opacity: 1 },
+        { transform: 'scale(0.45)', opacity: 0.35, offset: 0.45 },
+        { transform: 'scale(1)', opacity: 1, offset: 0.88 },
+        { transform: 'scale(1)', opacity: 1 }
+      ],
+      { duration }
+    );
+
+    rotation = target;
+
+    setTimeout(() => {
+      result.textContent = side === 'heads' ? 'HEADS' : 'TAILS';
+      result.classList.add(side, 'show');
+      button.disabled = false;
+      button.focus();
+    }, duration);
+  });
+</script>
+</body>
+</html>
